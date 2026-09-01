@@ -1,0 +1,12 @@
+[package]
+name = "velvet"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy_ecs = "0.18.1"
+memmap2 = "0.9.11"
+smithay-client-toolkit = "=0.21.1"
+tempfile = "3.27.0"
+wayland-client = "0.31.15"
+wayland-protocols = "0.32.13"

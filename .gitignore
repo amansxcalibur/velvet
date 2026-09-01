@@ -1,0 +1,13 @@
+# Rust Build Artifacts
+/target/
+
+# Editor & IDE Configs
+.idea/
+.vscode/
+
+# OS Metadata
+.DS_Store
+
+# Temporary / Backup Files
+**/*.rs.bk
+*.log
