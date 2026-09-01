@@ -1,0 +1,10 @@
+[package]
+name = "wayland-client-layer"
+version = "0.1.0"
+edition = "2024"
+edition.workspace = true
+
+[dependencies]
+smithay-client-toolkit = {workspace = true}
+calloop = { workspace = true}
+calloop-wayland-source = {workspace = true}

@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wayland-client",
+    "crates/ecs-core",
+    "crates/layout",
+    "crates/render",
+    "crates/widget",
+    "app"
+]
+
+[workspace.package]
+edition="2021"
+rust-version= "1.97"
+
+[workspace.dependencies]
+smithay-client-toolkit= "0.21" # API for interacting with Wayland compositor
+calloop= "0.14" # Event loop for I/O
+calloop-wayland-source = "0.4" # Connects wayland events to the calloop event
+bevy_ecs= "0.19" #ECS framework
+taffy= "0.12"3 # Layout engine for element positions
+wgpu= "30.0" # CPU Graphics API to render graphics
