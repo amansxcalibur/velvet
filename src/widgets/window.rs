@@ -1,5 +1,8 @@
 use bevy_ecs::prelude::*;
-use std::collections::HashMap;
+use smithay_client_toolkit::compositor::{self, Surface};
+use smithay_client_toolkit::shell::xdg;
+use smithay_client_toolkit::shell::xdg::window::Window;
+use std::{collections::HashMap};
 use std::os::unix::io::AsFd;
 use wayland_client::{
     QueueHandle,
@@ -9,6 +12,33 @@ use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_ba
 
 use crate::state::AppStateInternal;
 
+#[derive(Component, Clone, Copy)]
+pub struct Size {
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Component, Clone, Copy)]
+pub struct  BackgroundColor { // Following Argb8888 format
+    pub b: u8,
+    pub g: u8,
+    pub r: u8,
+    pub a: u8, // alpha
+}
+
+impl Default for Size {
+    fn default() -> Self {
+        Self { width: 400, height: 300 }
+    }
+}
+
+impl Default for BackgroundColor {
+    fn default() -> Self {
+        Self { b: 0xAA, g: 0x88, r: 0x44, a: 0xFF }
+    }
+}
+
+#[derive(Component)]
 pub struct VelvetWindow {
     pub surface: wl_surface::WlSurface,
     pub xdg_surface: xdg_surface::XdgSurface,
@@ -26,7 +56,7 @@ impl VelvetWindow {
     ) -> Self {
         let surface = compositor.create_surface(qh, ());
         let xdg_surface = wm_base.get_xdg_surface(&surface, qh, window_id);
-        let toplevel = xdg_surface.get_toplevel(qh, ());
+        let toplevel= xdg_surface.get_toplevel(qh, ());
 
         toplevel.set_title(desc.title);
         surface.commit();
@@ -38,7 +68,6 @@ impl VelvetWindow {
             configured: false,
         }
     }
-
     pub fn draw_solid_teal(
         &self,
         shm: &wl_shm::WlShm,
@@ -67,6 +96,7 @@ impl VelvetWindow {
         self.surface.damage_buffer(0, 0, WIDTH, HEIGHT);
         self.surface.commit();
     }
+
 }
 
 pub enum WindowRole {
