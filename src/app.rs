@@ -1,6 +1,6 @@
 use crate::state::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
-use crate::widgets::window::{VelvetWindow, WindowDescriptor, WindowManager};
-use bevy_ecs::prelude::*;
+use crate::widgets::window::{VelvetWindow, WindowDescriptor, WindowRegistry, render_windows_system};
+use bevy_ecs::{entity, prelude::*};
 use wayland_client::{Connection, QueueHandle};
 
 pub struct Application {
@@ -38,7 +38,7 @@ impl Application {
 
         let mut world = World::new();
         world.init_resource::<Messages<WindowCloseRequested>>();
-        world.init_resource::<WindowManager>();
+        world.init_resource::<WindowRegistry>();
         world.insert_resource(globals);
 
         Self {
@@ -55,7 +55,7 @@ impl Application {
 
         // peeky boo
         let window_id = {
-            let window_manager = self.world.resource::<WindowManager>();
+            let window_manager = self.world.resource::<WindowRegistry>();
             window_manager.next_id()
         };
         let window = VelvetWindow::new(
@@ -65,13 +65,16 @@ impl Application {
             desc,
             window_id,
         );
-        self.add_window(window)
+        let entity = self.world.spawn((window, crate::widgets::window::Size::default(), crate::widgets::window::BackgroundColor::default())).id();
+        self.world.resource_mut::<WindowRegistry>().register(window_id,entity);
+
+        window_id
     }
 
-    pub fn add_window(&mut self, window: VelvetWindow) -> usize {
-        let mut window_manager = self.world.resource_mut::<WindowManager>();
-        window_manager.add_window(window)
-    }
+    // pub fn add_window(&mut self, window: VelvetWindow) -> usize {
+    //     let mut window_manager = self.world.resource_mut::<WindowRegistry>();
+    //     window_manager.register(window_id, entity)
+    // }
 
     pub fn run(mut self) {
         while self.app_state.running {
@@ -80,9 +83,13 @@ impl Application {
                 .unwrap();
 
             if !self.app_state.pending_configures.is_empty() {
-                let mut wm = self.world.resource_mut::<WindowManager>();
-                for id in self.app_state.pending_configures.drain(..) {
-                    wm.mark_configured(id);
+                let ids: Vec<usize> = self.app_state.pending_configures.drain(..).collect();
+                for id in ids {
+                    if let Some(entity) = self.world.resource::<WindowRegistry>().get(id) {
+                        if let Some(mut window) = self.world.get_mut::<VelvetWindow>(entity) {
+                            window.configured = true;
+                        }
+                    }
                 }
             }
 
@@ -92,9 +99,7 @@ impl Application {
             }
 
             let shm = self.world.resource::<WaylandGlobals>().shm.clone();
-            self.world
-                .resource_mut::<WindowManager>()
-                .render_all(&shm, &self.qh);
+            render_windows_system(&mut self.world, &shm, &self.qh);
             self.world
                 .resource_mut::<Messages<WindowCloseRequested>>()
                 .update();

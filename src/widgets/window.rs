@@ -1,7 +1,6 @@
-use bevy_ecs::prelude::*;
+use bevy_ecs::{prelude::*, query, world};
 use smithay_client_toolkit::compositor::{self, Surface};
-use smithay_client_toolkit::shell::xdg;
-use smithay_client_toolkit::shell::xdg::window::Window;
+use smithay_client_toolkit::shell::xdg::window;
 use std::{collections::HashMap};
 use std::os::unix::io::AsFd;
 use wayland_client::{
@@ -72,31 +71,44 @@ impl VelvetWindow {
         &self,
         shm: &wl_shm::WlShm,
         qh: &QueueHandle<crate::state::AppStateInternal>,
+        size: &Size,
+        color: &BackgroundColor,
     ) {
-        const WIDTH: i32 = 400;
-        const HEIGHT: i32 = 300;
-        let stride = WIDTH * 4;
-        let size = (stride * HEIGHT) as usize;
+        let height = size.height;
+        let width = size.width;
+        let stride = width * 4;
+        let buf_size =(stride*height) as usize;
 
         let file = tempfile::tempfile().unwrap();
-        file.set_len(size as u64).unwrap();
+        file.set_len(buf_size as u64).unwrap();
         let mut mmap = unsafe { memmap2::MmapMut::map_mut(&file).unwrap() };
 
         for px in mmap.chunks_exact_mut(4) {
-            px[0] = 0xAA; // B
-            px[1] = 0x88; // G
-            px[2] = 0x44; // R
-            px[3] = 0xFF; // A
+            px[0] = color.b;
+            px[1] = color.g;
+            px[2] = color.r;
+            px[3] = color.a;
         }
 
-        let pool = shm.create_pool(file.as_fd(), size as i32, qh, ());
-        let buffer = pool.create_buffer(0, WIDTH, HEIGHT, stride, wl_shm::Format::Argb8888, qh, ());
+        let pool = shm.create_pool(file.as_fd(), buf_size as i32, qh, ());
+        let buffer = pool.create_buffer(0, width, height, stride, wl_shm::Format::Argb8888, qh, ());
 
         self.surface.attach(Some(&buffer), 0, 0);
-        self.surface.damage_buffer(0, 0, WIDTH, HEIGHT);
+        self.surface.damage_buffer(0, 0, width, height);
         self.surface.commit();
     }
-
+}
+pub fn render_windows_system(
+    world: &mut World,
+    shm: &wl_shm::WlShm,
+    qh: &QueueHandle<AppStateInternal>,
+ ) {
+    let mut query = world.query::<(&VelvetWindow, &Size, &BackgroundColor)>();
+    for (window, size, color ) in query.iter(world) {
+        if window.configured {
+            window.draw_solid_teal(shm, qh, size,color);
+        }
+    }
 }
 
 pub enum WindowRole {
@@ -125,33 +137,20 @@ impl Default for WindowDescriptor {
     }
 }
 #[derive(Resource, Default)]
-pub struct WindowManager {
-    windows: HashMap<usize, VelvetWindow>,
+pub struct WindowRegistry {
+    entities: HashMap<usize, Entity>,
     next_id: usize,
 }
 
-impl WindowManager {
-    pub fn render_all(&mut self, shm: &wl_shm::WlShm, qh: &QueueHandle<AppStateInternal>) {
-        for window in self.windows.values_mut() {
-            if window.configured {
-                window.draw_solid_teal(shm, qh);
-            }
-        }
-    }
+impl WindowRegistry {
     pub fn next_id(&self) -> usize {
         self.next_id
     }
-
-    pub fn add_window(&mut self, window: VelvetWindow) -> usize {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.windows.insert(id, window);
-        id
+    pub fn register(&mut self, window_id: usize, entity: Entity) {
+        self.entities.insert(window_id, entity);
+        self.next_id = self.next_id.max(window_id+1);
     }
-
-    pub fn mark_configured(&mut self, id: usize) {
-        if let Some(w) = self.windows.get_mut(&id) {
-            w.configured = true;
-        }
+    pub fn get(&self, window_id: usize) -> Option<Entity> {
+        self.entities.get(&window_id).copied()
     }
 }
