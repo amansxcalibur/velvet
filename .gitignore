@@ -1,6 +1,10 @@
 # Rust Build Artifacts
 /target/
 
+# Graphify Knowledge Graph Output
+/graphify-out/
+/.opencode/
+
 # Editor & IDE Configs
 .idea/
 .vscode/

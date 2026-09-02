@@ -1,5 +1,5 @@
-use velvet::{Application};
-use velvet::widgets::window::{WindowDescriptor};
+use velvet::widgets::descriptor::WindowDescriptor;
+use velvet::Application;
 
 fn main() {
     let mut app = Application::new();

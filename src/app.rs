@@ -1,7 +1,11 @@
-use crate::state::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
-use crate::widgets::window::{VelvetWindow, WindowDescriptor, WindowManager};
+use crate::wayland::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
+use crate::widgets::descriptor::WindowDescriptor;
+use crate::widgets::window::VelvetWindow;
+use crate::widgets::window_manager::WindowManager;
 use bevy_ecs::prelude::*;
 use wayland_client::{Connection, QueueHandle};
+
+use log::*;
 
 pub struct Application {
     world: World,
@@ -13,6 +17,10 @@ pub struct Application {
 
 impl Application {
     pub fn new() -> Self {
+        let _ = env_logger::Builder::new()
+            .filter_level(log::LevelFilter::Debug)
+            .try_init();
+
         let conn = Connection::connect_to_env().expect("no wayland compositor");
         let display = conn.display();
         let mut event_queue = conn.new_event_queue();
@@ -25,6 +33,7 @@ impl Application {
             wm_base: None,
             running: true,
             pending_configures: Vec::new(),
+            pending_closes: Vec::new(),
         };
 
         // fetch globals
@@ -86,9 +95,17 @@ impl Application {
                 }
             }
 
-            let close_messages = self.world.resource::<Messages<WindowCloseRequested>>();
-            if !close_messages.is_empty() {
-                break;
+            if !self.app_state.pending_closes.is_empty() {
+                let mut wm = self.world.resource_mut::<WindowManager>();
+                for id in self.app_state.pending_closes.drain(..) {
+                    wm.destroy_window_by_id(id);
+                    debug!("Destroyed VelvetWindow (id: {id:#04x})")
+                }
+            }
+
+            let wm = self.world.resource::<WindowManager>();
+            if wm.is_empty() {
+                break; // Exit main loop only when no windows remain
             }
 
             let shm = self.world.resource::<WaylandGlobals>().shm.clone();
@@ -104,5 +121,6 @@ impl Application {
                 .blocking_dispatch(&mut self.app_state)
                 .unwrap();
         }
+        debug!("Closing Application")
     }
 }

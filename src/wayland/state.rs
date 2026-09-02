@@ -1,20 +1,8 @@
-use bevy_ecs::prelude::*;
-
 use wayland_client::{
-    Connection, Dispatch, QueueHandle,
     protocol::{wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface},
+    Connection, Dispatch, QueueHandle,
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
-
-#[derive(Message)]
-pub struct WindowCloseRequested;
-
-#[derive(Resource)]
-pub struct WaylandGlobals {
-    pub compositor: wl_compositor::WlCompositor,
-    pub shm: wl_shm::WlShm,
-    pub wm_base: xdg_wm_base::XdgWmBase,
-}
 
 pub struct AppStateInternal {
     pub compositor: Option<wl_compositor::WlCompositor>,
@@ -22,6 +10,7 @@ pub struct AppStateInternal {
     pub wm_base: Option<xdg_wm_base::XdgWmBase>,
     pub running: bool,
     pub pending_configures: Vec<usize>,
+    pub pending_closes: Vec<usize>,
 }
 
 impl Dispatch<wl_registry::WlRegistry, ()> for AppStateInternal {
@@ -134,19 +123,19 @@ impl Dispatch<xdg_surface::XdgSurface, usize> for AppStateInternal {
     }
 }
 
-impl Dispatch<xdg_toplevel::XdgToplevel, ()> for AppStateInternal {
+impl Dispatch<xdg_toplevel::XdgToplevel, usize> for AppStateInternal {
     fn event(
         state: &mut Self,
         _toplevel: &xdg_toplevel::XdgToplevel,
         event: xdg_toplevel::Event,
-        _: &(),
+        window_id: &usize,
         _: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
         match event {
             xdg_toplevel::Event::Close => {
-                // Handle close request from compositor
-                state.running = false;
+                // handle close request from compositor
+                state.pending_closes.push(*window_id);
             }
             _ => {}
         }
