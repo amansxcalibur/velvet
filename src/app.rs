@@ -1,8 +1,10 @@
 use crate::wayland::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
 use crate::widgets::descriptor::WindowDescriptor;
+use crate::widgets::gpu::*;
 use crate::widgets::window::VelvetWindow;
 use crate::widgets::window_manager::WindowManager;
 use bevy_ecs::prelude::*;
+use std::collections::HashMap;
 use wayland_client::{Connection, QueueHandle};
 
 use log::*;
@@ -15,10 +17,16 @@ pub struct Application {
     app_state: AppStateInternal, // reuse, don't recreate
 }
 
+impl Default for Application {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Application {
     pub fn new() -> Self {
         let _ = env_logger::Builder::new()
-            .filter_level(log::LevelFilter::Debug)
+            .filter_level(log::LevelFilter::Warn)
             .try_init();
 
         let conn = Connection::connect_to_env().expect("no wayland compositor");
@@ -34,6 +42,7 @@ impl Application {
             running: true,
             pending_configures: Vec::new(),
             pending_closes: Vec::new(),
+            pending_sizes: HashMap::new(),
         };
 
         // fetch globals
@@ -49,6 +58,7 @@ impl Application {
         world.init_resource::<Messages<WindowCloseRequested>>();
         world.init_resource::<WindowManager>();
         world.insert_resource(globals);
+        world.insert_resource(GpuContext::new());
 
         Self {
             world,
@@ -67,12 +77,14 @@ impl Application {
             let window_manager = self.world.resource::<WindowManager>();
             window_manager.next_id()
         };
+        let display_ptr = self.conn.backend().display_ptr() as *mut std::ffi::c_void;
         let window = VelvetWindow::new(
             &globals.compositor,
             &globals.wm_base,
             &self.qh,
             desc,
             window_id,
+            display_ptr,
         );
         self.add_window(window)
     }
@@ -89,10 +101,13 @@ impl Application {
                 .unwrap();
 
             if !self.app_state.pending_configures.is_empty() {
-                let mut wm = self.world.resource_mut::<WindowManager>();
-                for id in self.app_state.pending_configures.drain(..) {
-                    wm.mark_configured(id);
-                }
+                self.world.resource_scope(|world, ctx: Mut<GpuContext>| {
+                    let mut wm = world.resource_mut::<WindowManager>();
+                    for (id, w, h) in self.app_state.pending_configures.drain(..) {
+                        wm.ensure_gpu_surface(id, &ctx, w as u32, h as u32);
+                        wm.mark_configured(id);
+                    }
+                });
             }
 
             if !self.app_state.pending_closes.is_empty() {
@@ -105,22 +120,23 @@ impl Application {
 
             let wm = self.world.resource::<WindowManager>();
             if wm.is_empty() {
-                break; // Exit main loop only when no windows remain
+                break; // no windows remain
             }
 
-            let shm = self.world.resource::<WaylandGlobals>().shm.clone();
-            self.world
-                .resource_mut::<WindowManager>()
-                .render_all(&shm, &self.qh);
-            self.world
-                .resource_mut::<Messages<WindowCloseRequested>>()
-                .update();
+            self.world.resource_scope(|world, ctx: Mut<GpuContext>| {
+                let wm = world.resource_mut::<WindowManager>();
+                wm.render_all_gpu(&ctx);
+            });
+
+            // self.world
+            //     .resource_mut::<Messages<WindowCloseRequested>>()
+            //     .update();
 
             let _ = self.conn.flush();
             self.event_queue
                 .blocking_dispatch(&mut self.app_state)
                 .unwrap();
         }
-        debug!("Closing Application")
+        debug!("Closing Velvet Application")
     }
 }

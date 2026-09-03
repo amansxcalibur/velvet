@@ -1,15 +1,19 @@
 use wayland_client::{
-    protocol::{wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface},
     Connection, Dispatch, QueueHandle,
+    protocol::{wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface},
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+
+const DEFAULT_WIDTH: i32 = 400;
+const DEFAULT_HEIGHT: i32 = 400;
 
 pub struct AppStateInternal {
     pub compositor: Option<wl_compositor::WlCompositor>,
     pub shm: Option<wl_shm::WlShm>,
     pub wm_base: Option<xdg_wm_base::XdgWmBase>,
     pub running: bool,
-    pub pending_configures: Vec<usize>,
+    pub pending_sizes: std::collections::HashMap<usize, (i32, i32)>, // latest size seen per window
+    pub pending_configures: Vec<(usize, i32, i32)>,                  // (window_id, width, height)
     pub pending_closes: Vec<usize>,
 }
 
@@ -20,7 +24,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for AppStateInternal {
         event: wl_registry::Event,
         _: &(),
         _: &Connection,
-        qh: &QueueHandle<AppStateInternal>,
+        qh: &QueueHandle<Self>,
     ) {
         if let wl_registry::Event::Global {
             name, interface, ..
@@ -43,7 +47,7 @@ impl Dispatch<wl_compositor::WlCompositor, ()> for AppStateInternal {
         _: wl_compositor::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<AppStateInternal>,
+        _: &QueueHandle<Self>,
     ) {
     }
 }
@@ -54,7 +58,7 @@ impl Dispatch<wl_shm::WlShm, ()> for AppStateInternal {
         _: wl_shm::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<AppStateInternal>,
+        _: &QueueHandle<Self>,
     ) {
     }
 }
@@ -65,7 +69,7 @@ impl Dispatch<wl_shm_pool::WlShmPool, ()> for AppStateInternal {
         _: wl_shm_pool::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<AppStateInternal>,
+        _: &QueueHandle<Self>,
     ) {
     }
 }
@@ -76,7 +80,7 @@ impl Dispatch<wl_buffer::WlBuffer, ()> for AppStateInternal {
         _: wl_buffer::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<AppStateInternal>,
+        _: &QueueHandle<Self>,
     ) {
     }
 }
@@ -87,7 +91,7 @@ impl Dispatch<wl_surface::WlSurface, ()> for AppStateInternal {
         _: wl_surface::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<AppStateInternal>,
+        _: &QueueHandle<Self>,
     ) {
     }
 }
@@ -99,7 +103,7 @@ impl Dispatch<xdg_wm_base::XdgWmBase, ()> for AppStateInternal {
         event: xdg_wm_base::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<AppStateInternal>,
+        _: &QueueHandle<Self>,
     ) {
         if let xdg_wm_base::Event::Ping { serial } = event {
             wm_base.pong(serial);
@@ -118,7 +122,12 @@ impl Dispatch<xdg_surface::XdgSurface, usize> for AppStateInternal {
     ) {
         if let xdg_surface::Event::Configure { serial } = event {
             xdg_surf.ack_configure(serial);
-            state.pending_configures.push(*window_id);
+            let (w, h) = state
+                .pending_sizes
+                .get(window_id)
+                .copied()
+                .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT));
+            state.pending_configures.push((*window_id, w, h));
         }
     }
 }
@@ -126,17 +135,20 @@ impl Dispatch<xdg_surface::XdgSurface, usize> for AppStateInternal {
 impl Dispatch<xdg_toplevel::XdgToplevel, usize> for AppStateInternal {
     fn event(
         state: &mut Self,
-        _toplevel: &xdg_toplevel::XdgToplevel,
+        _t: &xdg_toplevel::XdgToplevel,
         event: xdg_toplevel::Event,
         window_id: &usize,
         _: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
         match event {
-            xdg_toplevel::Event::Close => {
-                // handle close request from compositor
-                state.pending_closes.push(*window_id);
+            xdg_toplevel::Event::Configure { width, height, .. } => {
+                if width > 0 && height > 0 {
+                    state.pending_sizes.insert(*window_id, (width, height));
+                }
             }
+            // handle close request from compositor
+            xdg_toplevel::Event::Close => state.pending_closes.push(*window_id),
             _ => {}
         }
     }

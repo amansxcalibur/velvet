@@ -1,9 +1,7 @@
-use crate::wayland::AppStateInternal;
+use crate::widgets::gpu::{GpuContext, GpuSurface};
 use crate::widgets::window::VelvetWindow;
 use bevy_ecs::prelude::*;
 use std::collections::HashMap;
-use wayland_client::QueueHandle;
-use wayland_client::protocol::wl_shm;
 
 #[derive(Resource, Default)]
 pub struct WindowManager {
@@ -12,22 +10,19 @@ pub struct WindowManager {
 }
 
 impl WindowManager {
-    pub fn render_all(&mut self, shm: &wl_shm::WlShm, qh: &QueueHandle<AppStateInternal>) {
-        for window in self.windows.values_mut() {
-            if window.configured {
-                window.draw_solid_teal(shm, qh);
-            }
-        }
-    }
-    pub fn next_id(&self) -> usize {
-        self.next_id
-    }
-
     pub fn add_window(&mut self, window: VelvetWindow) -> usize {
         let id = self.next_id;
         self.next_id += 1;
         self.windows.insert(id, window);
         id
+    }
+
+    pub fn next_id(&self) -> usize {
+        self.next_id
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.windows.is_empty()
     }
 
     pub fn mark_configured(&mut self, id: usize) {
@@ -38,11 +33,36 @@ impl WindowManager {
 
     pub fn destroy_window_by_id(&mut self, id: usize) {
         if let Some(_window) = self.windows.remove(&id) {
-            // _window goes out of scope right here, hence "drop"-ed
+            // _window goes out of scope right here & hence "drop"-ed
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.windows.is_empty()
+    pub fn ensure_gpu_surface(&mut self, id: usize, ctx: &GpuContext, w: u32, h: u32) {
+        let Some(window) = self.windows.get_mut(&id) else {
+            return;
+        };
+
+        if let Some(gpu) = &mut window.gpu {
+            gpu.resize(ctx, w, h);
+        } else {
+            let gpu = GpuSurface::new(ctx, window, w, h);
+            window.gpu = Some(gpu);
+        }
+    }
+
+    pub fn render_all_gpu(&self, ctx: &GpuContext) {
+        for window in self.windows.values() {
+            if let Some(gpu) = &window.gpu {
+                gpu.render(
+                    ctx,
+                    wgpu::Color {
+                        r: 0.267,
+                        g: 0.529,
+                        b: 0.667,
+                        a: 1.0,
+                    },
+                );
+            }
+        }
     }
 }

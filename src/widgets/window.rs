@@ -1,17 +1,30 @@
+use super::gpu::{GpuContext, GpuSurface};
 use crate::wayland::AppStateInternal;
 use crate::widgets::descriptor::WindowDescriptor;
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
+    RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
+};
 use std::os::unix::io::AsFd;
+use wayland_client::Proxy;
 use wayland_client::{
     QueueHandle,
     protocol::{wl_compositor, wl_shm, wl_surface},
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
+#[derive(Clone, Copy)]
+struct DisplayPtr(*mut std::ffi::c_void);
+unsafe impl Send for DisplayPtr {}
+unsafe impl Sync for DisplayPtr {}
+
 pub struct VelvetWindow {
+    pub gpu: Option<GpuSurface>,
     pub surface: wl_surface::WlSurface,
     pub xdg_surface: xdg_surface::XdgSurface,
     pub toplevel: xdg_toplevel::XdgToplevel,
     pub configured: bool,
+    display_ptr: DisplayPtr,
 }
 
 impl VelvetWindow {
@@ -21,6 +34,7 @@ impl VelvetWindow {
         qh: &QueueHandle<AppStateInternal>,
         desc: WindowDescriptor,
         window_id: usize,
+        display_ptr: *mut std::ffi::c_void,
     ) -> Self {
         let surface = compositor.create_surface(qh, ());
         let xdg_surface = wm_base.get_xdg_surface(&surface, qh, window_id);
@@ -34,6 +48,8 @@ impl VelvetWindow {
             xdg_surface,
             toplevel,
             configured: false,
+            gpu: None,
+            display_ptr: DisplayPtr(display_ptr),
         }
     }
 
@@ -60,6 +76,35 @@ impl VelvetWindow {
         self.surface.attach(Some(&buffer), 0, 0);
         self.surface.damage_buffer(0, 0, WIDTH, HEIGHT);
         self.surface.commit();
+    }
+
+    pub fn render(&self, ctx: &GpuContext) {
+        if let Some(gpu) = &self.gpu {
+            gpu.render(
+                ctx,
+                wgpu::Color {
+                    r: 0.267,
+                    g: 0.529,
+                    b: 0.667,
+                    a: 1.0,
+                },
+            );
+        }
+    }
+}
+
+impl HasDisplayHandle for VelvetWindow {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        let handle = WaylandDisplayHandle::new(std::ptr::NonNull::new(self.display_ptr.0).unwrap());
+        Ok(unsafe { DisplayHandle::borrow_raw(RawDisplayHandle::Wayland(handle)) })
+    }
+}
+
+impl HasWindowHandle for VelvetWindow {
+    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+        let ptr = self.surface.id().as_ptr();
+        let handle = WaylandWindowHandle::new(std::ptr::NonNull::new(ptr as *mut _).unwrap());
+        Ok(unsafe { WindowHandle::borrow_raw(RawWindowHandle::Wayland(handle)) })
     }
 }
 
