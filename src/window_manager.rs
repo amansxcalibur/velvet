@@ -1,4 +1,4 @@
-use crate::widgets::gpu::{GpuContext, GpuSurface};
+use crate::render::{GpuContext, GpuSurface};
 use crate::widgets::window::VelvetWindow;
 use bevy_ecs::prelude::*;
 use std::collections::HashMap;

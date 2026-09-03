@@ -1,15 +1,13 @@
-use super::gpu::{GpuContext, GpuSurface};
+use crate::render::{GpuContext, GpuSurface};
 use crate::wayland::AppStateInternal;
-use crate::widgets::descriptor::WindowDescriptor;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
 };
-use std::os::unix::io::AsFd;
 use wayland_client::Proxy;
 use wayland_client::{
     QueueHandle,
-    protocol::{wl_compositor, wl_shm, wl_surface},
+    protocol::{wl_compositor, wl_surface},
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
@@ -17,6 +15,34 @@ use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_ba
 struct DisplayPtr(*mut std::ffi::c_void);
 unsafe impl Send for DisplayPtr {}
 unsafe impl Sync for DisplayPtr {}
+
+#[derive(Debug)]
+pub enum WindowRole {
+    Toplevel,
+    Dialog,
+    Popup,
+}
+
+#[derive(Debug)]
+pub struct WindowDescriptor {
+    pub title: String,
+    pub width: u32,
+    pub height: u32,
+    pub role: WindowRole,
+    pub decorated: bool,
+}
+
+impl Default for WindowDescriptor {
+    fn default() -> Self {
+        Self {
+            title: "Velvet Application".into(),
+            width: 800,
+            height: 600,
+            role: WindowRole::Toplevel,
+            decorated: true,
+        }
+    }
+}
 
 pub struct VelvetWindow {
     pub gpu: Option<GpuSurface>,
@@ -51,31 +77,6 @@ impl VelvetWindow {
             gpu: None,
             display_ptr: DisplayPtr(display_ptr),
         }
-    }
-
-    pub fn draw_solid_teal(&self, shm: &wl_shm::WlShm, qh: &QueueHandle<AppStateInternal>) {
-        const WIDTH: i32 = 400;
-        const HEIGHT: i32 = 300;
-        let stride = WIDTH * 4;
-        let size = (stride * HEIGHT) as usize;
-
-        let file = tempfile::tempfile().unwrap();
-        file.set_len(size as u64).unwrap();
-        let mut mmap = unsafe { memmap2::MmapMut::map_mut(&file).unwrap() };
-
-        for px in mmap.chunks_exact_mut(4) {
-            px[0] = 0xAA; // B
-            px[1] = 0x88; // G
-            px[2] = 0x44; // R
-            px[3] = 0xFF; // A
-        }
-
-        let pool = shm.create_pool(file.as_fd(), size as i32, qh, ());
-        let buffer = pool.create_buffer(0, WIDTH, HEIGHT, stride, wl_shm::Format::Argb8888, qh, ());
-
-        self.surface.attach(Some(&buffer), 0, 0);
-        self.surface.damage_buffer(0, 0, WIDTH, HEIGHT);
-        self.surface.commit();
     }
 
     pub fn render(&self, ctx: &GpuContext) {

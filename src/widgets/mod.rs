@@ -1,8 +1,3 @@
-pub mod descriptor;
 pub mod window;
-pub mod window_manager;
-pub mod gpu;
 
-pub use descriptor::{WindowDescriptor, WindowRole};
-pub use window::VelvetWindow;
-pub use window_manager::WindowManager;
+pub use window::{VelvetWindow, WindowDescriptor, WindowRole};

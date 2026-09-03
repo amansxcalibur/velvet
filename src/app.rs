@@ -1,13 +1,11 @@
+use crate::render::*;
 use crate::wayland::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
-use crate::widgets::descriptor::WindowDescriptor;
-use crate::widgets::gpu::*;
-use crate::widgets::window::VelvetWindow;
-use crate::widgets::window_manager::WindowManager;
+use crate::widgets::window::{VelvetWindow, WindowDescriptor};
+use crate::window_manager::WindowManager;
 use bevy_ecs::prelude::*;
+use log::*;
 use std::collections::HashMap;
 use wayland_client::{Connection, QueueHandle};
-
-use log::*;
 
 pub struct Application {
     world: World,

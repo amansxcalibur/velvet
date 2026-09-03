@@ -1,7 +1,8 @@
 pub mod app;
+pub mod render;
 pub mod wayland;
 pub mod widgets;
+pub mod window_manager;
 
 pub use app::Application;
-pub use widgets::window::VelvetWindow;
-pub use widgets::window_manager::WindowManager;
+pub use window_manager::WindowManager;
