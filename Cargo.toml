@@ -14,3 +14,4 @@ wayland-client = "0.31.15"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = "0.32.13"
 wgpu = "30.0.1"
+bytemuck = "1.25.2"

@@ -1,5 +1,7 @@
-use crate::render::context::GpuContext;
+use super::context::GpuContext;
+use super::quad::{QuadInstance, QuadPipeline};
 use crate::widgets::window::VelvetWindow;
+use wgpu::util::DeviceExt;
 
 pub struct GpuSurface {
     pub surface: wgpu::Surface<'static>,
@@ -47,7 +49,13 @@ impl GpuSurface {
         self.surface.configure(&ctx.device, &self.config);
     }
 
-    pub fn render(&self, ctx: &GpuContext, clear: wgpu::Color) {
+    pub fn render(
+        &self,
+        ctx: &GpuContext,
+        pipeline: &QuadPipeline,
+        instances: &[QuadInstance],
+        clear: wgpu::Color,
+    ) {
         let surface_output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t) => t,
             wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -67,12 +75,33 @@ impl GpuSurface {
         let view = surface_output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        // update projection matrix uniform
+        let ortho = create_ortho_matrix(self.config.width as f32, self.config.height as f32);
+        ctx.queue
+            .write_buffer(&pipeline.camera_buffer, 0, bytemuck::cast_slice(&[ortho]));
+
+        // upload instance data
+        let instance_buffer = if !instances.is_empty() {
+            Some(
+                ctx.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Instance Buffer"),
+                        contents: bytemuck::cast_slice(instances),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+            )
+        } else {
+            None
+        };
+
         let mut encoder = ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
         {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Quad Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     depth_slice: None,
@@ -87,8 +116,28 @@ impl GpuSurface {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+
+            // bind pipeline and issue draw call if there are instances to draw
+            if let Some(ref buffer) = instance_buffer {
+                pass.set_pipeline(&pipeline.pipeline);
+                pass.set_bind_group(0, &pipeline.camera_bind_group, &[]);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+
+                // 6 vertices per quad (2 triangles), drawn once per instance
+                pass.draw(0..6, 0..instances.len() as u32);
+            }
         }
+
         ctx.queue.submit(Some(encoder.finish()));
         ctx.queue.present(surface_output);
     }
+}
+
+fn create_ortho_matrix(width: f32, height: f32) -> [[f32; 4]; 4] {
+    [
+        [2.0 / width, 0.0, 0.0, 0.0],
+        [0.0, -2.0 / height, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [-1.0, 1.0, 0.0, 1.0],
+    ]
 }

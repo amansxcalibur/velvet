@@ -1,3 +1,4 @@
+use super::quad::QuadPipeline;
 use bevy_ecs::prelude::*;
 
 #[derive(Resource)]
@@ -6,6 +7,7 @@ pub struct GpuContext {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    pub quad_pipeline: QuadPipeline,
 }
 
 impl Default for GpuContext {
@@ -39,11 +41,15 @@ impl GpuContext {
         }))
         .expect("failed to create wgpu device");
 
+        let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let quad_pipeline = QuadPipeline::new(&device, format);
+
         Self {
             instance,
             adapter,
             device,
             queue,
+            quad_pipeline,
         }
     }
 }

@@ -1755,6 +1755,7 @@ name = "velvet"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
+ "bytemuck",
  "env_logger",
  "log",
  "pollster",

@@ -1,8 +1,8 @@
 use crate::render::*;
 use crate::wayland::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
 use crate::widgets::window::{VelvetWindow, WindowDescriptor};
-use crate::window_manager::{process_window_closes, WindowManager};
-use bevy_ecs::message::{message_update_system, MessageRegistry};
+use crate::window_manager::{WindowManager, process_window_closes};
+use bevy_ecs::message::{MessageRegistry, message_update_system};
 use bevy_ecs::prelude::*;
 use log::*;
 use std::collections::HashMap;
@@ -96,6 +96,17 @@ impl Application {
     pub fn add_window(&mut self, window: VelvetWindow) -> usize {
         let mut window_manager = self.world.resource_mut::<WindowManager>();
         window_manager.add_window(window)
+    }
+
+    pub fn set_window_quads(
+        &mut self,
+        window_id: usize,
+        quads: Vec<crate::render::quad::QuadInstance>,
+    ) {
+        let mut window_manager = self.world.resource_mut::<WindowManager>();
+        if let Some(window) = window_manager.windows.get_mut(&window_id) {
+            window.quads = quads;
+        }
     }
 
     pub fn run(mut self) {

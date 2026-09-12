@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 #[derive(Resource, Default)]
 pub struct WindowManager {
-    windows: HashMap<usize, VelvetWindow>,
+    pub(crate) windows: HashMap<usize, VelvetWindow>,
     next_id: usize,
 }
 
@@ -54,17 +54,13 @@ impl WindowManager {
 
     pub fn render_all_gpu(&self, ctx: &GpuContext) {
         for window in self.windows.values() {
-            if let Some(gpu) = &window.gpu {
-                gpu.render(
-                    ctx,
-                    wgpu::Color {
-                        r: 0.267,
-                        g: 0.529,
-                        b: 0.667,
-                        a: 1.0,
-                    },
-                );
-            }
+            window.render(ctx);
+        }
+    }
+
+    pub fn render_window(&self, id: usize, ctx: &GpuContext) {
+        if let Some(window) = self.windows.get(&id) {
+            window.render(ctx);
         }
     }
 }

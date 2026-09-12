@@ -1,3 +1,4 @@
+use crate::render::quad::QuadInstance;
 use crate::render::{GpuContext, GpuSurface};
 use crate::wayland::AppStateInternal;
 use raw_window_handle::{
@@ -51,6 +52,7 @@ pub struct VelvetWindow {
     pub toplevel: xdg_toplevel::XdgToplevel,
     pub configured: bool,
     display_ptr: DisplayPtr,
+    pub quads: Vec<QuadInstance>,
 }
 
 impl VelvetWindow {
@@ -76,6 +78,7 @@ impl VelvetWindow {
             configured: false,
             gpu: None,
             display_ptr: DisplayPtr(display_ptr),
+            quads: Vec::new(),
         }
     }
 
@@ -83,6 +86,8 @@ impl VelvetWindow {
         if let Some(gpu) = &self.gpu {
             gpu.render(
                 ctx,
+                &ctx.quad_pipeline,
+                &self.quads,
                 wgpu::Color {
                     r: 0.267,
                     g: 0.529,
