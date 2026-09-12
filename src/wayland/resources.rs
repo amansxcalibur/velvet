@@ -3,7 +3,7 @@ use wayland_client::protocol::{wl_compositor, wl_shm};
 use wayland_protocols::xdg::shell::client::xdg_wm_base;
 
 #[derive(Message)]
-pub struct WindowCloseRequested;
+pub struct WindowCloseRequested(pub usize);
 
 #[derive(Resource)]
 pub struct WaylandGlobals {

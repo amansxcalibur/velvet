@@ -1,6 +1,8 @@
 use crate::render::{GpuContext, GpuSurface};
+use crate::wayland::WindowCloseRequested;
 use crate::widgets::window::VelvetWindow;
 use bevy_ecs::prelude::*;
+use log::debug;
 use std::collections::HashMap;
 
 #[derive(Resource, Default)]
@@ -64,5 +66,17 @@ impl WindowManager {
                 );
             }
         }
+    }
+}
+
+pub fn process_window_closes(
+    mut reader: MessageReader<WindowCloseRequested>,
+    mut wm: ResMut<WindowManager>,
+) {
+    for msg in reader.read() {
+        let id = msg.0;
+
+        wm.destroy_window_by_id(id);
+        debug!("Destroyed VelvetWindow (id: {id:#04x})");
     }
 }

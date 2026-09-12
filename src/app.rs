@@ -1,7 +1,8 @@
 use crate::render::*;
 use crate::wayland::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
 use crate::widgets::window::{VelvetWindow, WindowDescriptor};
-use crate::window_manager::WindowManager;
+use crate::window_manager::{process_window_closes, WindowManager};
+use bevy_ecs::message::{message_update_system, MessageRegistry};
 use bevy_ecs::prelude::*;
 use log::*;
 use std::collections::HashMap;
@@ -9,6 +10,7 @@ use wayland_client::{Connection, QueueHandle};
 
 pub struct Application {
     world: World,
+    schedule: Schedule,
     conn: Connection,
     event_queue: wayland_client::EventQueue<AppStateInternal>,
     qh: QueueHandle<AppStateInternal>,
@@ -53,13 +55,17 @@ impl Application {
         };
 
         let mut world = World::new();
-        world.init_resource::<Messages<WindowCloseRequested>>();
+        MessageRegistry::register_message::<WindowCloseRequested>(&mut world);
         world.init_resource::<WindowManager>();
         world.insert_resource(globals);
         world.insert_resource(GpuContext::new());
 
+        let mut schedule = Schedule::default();
+        schedule.add_systems((message_update_system, process_window_closes));
+
         Self {
             world,
+            schedule,
             conn,
             event_queue,
             qh,
@@ -108,13 +114,15 @@ impl Application {
                 });
             }
 
+            // close events
             if !self.app_state.pending_closes.is_empty() {
-                let mut wm = self.world.resource_mut::<WindowManager>();
+                let mut ecs_messages = self.world.resource_mut::<Messages<WindowCloseRequested>>();
                 for id in self.app_state.pending_closes.drain(..) {
-                    wm.destroy_window_by_id(id);
-                    debug!("Destroyed VelvetWindow (id: {id:#04x})")
+                    ecs_messages.write(WindowCloseRequested(id));
                 }
             }
+
+            self.schedule.run(&mut self.world);
 
             let wm = self.world.resource::<WindowManager>();
             if wm.is_empty() {
@@ -125,10 +133,6 @@ impl Application {
                 let wm = world.resource_mut::<WindowManager>();
                 wm.render_all_gpu(&ctx);
             });
-
-            // self.world
-            //     .resource_mut::<Messages<WindowCloseRequested>>()
-            //     .update();
 
             let _ = self.conn.flush();
             self.event_queue
