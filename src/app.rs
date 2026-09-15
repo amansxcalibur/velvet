@@ -103,7 +103,6 @@ impl Application {
             display_ptr,
         );
 
-        // Register the surface → window_id mapping for input event routing
         self.app_state
             .register_surface(&window.surface, window_id);
 
@@ -154,7 +153,6 @@ impl Application {
                 }
             }
 
-            // pointer events → ECS
             if !self.app_state.pending_pointer_events.is_empty() {
                 let mut ecs_messages = self.world.resource_mut::<Messages<PointerEvent>>();
                 for event in self.app_state.pending_pointer_events.drain(..) {
@@ -162,7 +160,6 @@ impl Application {
                 }
             }
 
-            // keyboard events → ECS
             if !self.app_state.pending_keyboard_events.is_empty() {
                 let mut ecs_messages = self.world.resource_mut::<Messages<KeyboardEvent>>();
                 for event in self.app_state.pending_keyboard_events.drain(..) {

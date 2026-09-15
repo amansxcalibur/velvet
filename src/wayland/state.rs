@@ -21,33 +21,22 @@ pub struct AppStateInternal {
     pub pending_sizes: std::collections::HashMap<usize, (i32, i32)>, // latest size seen per window
     pub pending_configures: Vec<(usize, i32, i32)>,                  // (window_id, width, height)
     pub pending_closes: Vec<usize>,
-
-    // Input devices (obtained from wl_seat capabilities)
     pub pointer: Option<wl_pointer::WlPointer>,
     pub keyboard: Option<wl_keyboard::WlKeyboard>,
-
-    // Surface → window_id lookup (registered when VelvetWindow is created)
     pub surface_window_map: Vec<(wl_surface::WlSurface, usize)>,
-
-    // Current focus tracking
     pub pointer_focus: Option<usize>,
     pub keyboard_focus: Option<usize>,
-
-    // Staged input events — drained into ECS each frame
     pub pending_pointer_events: Vec<PointerEvent>,
     pub pending_keyboard_events: Vec<KeyboardEvent>,
 }
 
 impl AppStateInternal {
-    /// Register a wl_surface → window_id mapping for input event routing.
     pub fn register_surface(&mut self, surface: &wl_surface::WlSurface, window_id: usize) {
         self.surface_window_map.push((surface.clone(), window_id));
     }
 
-    /// Remove a window's surface mapping (called on window close).
     pub fn unregister_surface(&mut self, window_id: usize) {
         self.surface_window_map.retain(|(_, id)| *id != window_id);
-        // Clear focus if the destroyed window had it
         if self.pointer_focus == Some(window_id) {
             self.pointer_focus = None;
         }
@@ -56,7 +45,6 @@ impl AppStateInternal {
         }
     }
 
-    /// Look up which window_id owns a given wl_surface.
     fn lookup_window(&self, surface: &wl_surface::WlSurface) -> Option<usize> {
         self.surface_window_map
             .iter()
@@ -64,11 +52,6 @@ impl AppStateInternal {
             .map(|(_, id)| *id)
     }
 }
-
-// ===========================================================================
-// Existing Wayland global dispatch impls (unchanged logic)
-// ===========================================================================
-
 impl Dispatch<wl_registry::WlRegistry, ()> for AppStateInternal {
     fn event(
         state: &mut Self,
@@ -206,11 +189,6 @@ impl Dispatch<xdg_toplevel::XdgToplevel, usize> for AppStateInternal {
         }
     }
 }
-
-// ===========================================================================
-// wl_seat — capability negotiation
-// ===========================================================================
-
 impl Dispatch<wl_seat::WlSeat, ()> for AppStateInternal {
     fn event(
         state: &mut Self,
@@ -234,11 +212,6 @@ impl Dispatch<wl_seat::WlSeat, ()> for AppStateInternal {
         }
     }
 }
-
-// ===========================================================================
-// wl_pointer — mouse / trackpad events
-// ===========================================================================
-
 impl Dispatch<wl_pointer::WlPointer, ()> for AppStateInternal {
     fn event(
         state: &mut Self,
@@ -321,10 +294,6 @@ impl Dispatch<wl_pointer::WlPointer, ()> for AppStateInternal {
         }
     }
 }
-
-// ===========================================================================
-// wl_keyboard — key press / release / modifiers
-// ===========================================================================
 
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for AppStateInternal {
     fn event(
