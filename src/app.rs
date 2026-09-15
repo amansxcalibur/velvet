@@ -1,5 +1,7 @@
 use crate::render::*;
-use crate::wayland::{AppStateInternal, WaylandGlobals, WindowCloseRequested};
+use crate::wayland::{
+    AppStateInternal, KeyboardEvent, PointerEvent, WaylandGlobals, WindowCloseRequested,
+};
 use crate::widgets::window::{VelvetWindow, WindowDescriptor};
 use crate::window_manager::{WindowManager, process_window_closes};
 use bevy_ecs::message::{MessageRegistry, message_update_system};
@@ -39,10 +41,18 @@ impl Application {
             compositor: None,
             shm: None,
             wm_base: None,
+            seat: None,
             running: true,
             pending_configures: Vec::new(),
             pending_closes: Vec::new(),
             pending_sizes: HashMap::new(),
+            pointer: None,
+            keyboard: None,
+            surface_window_map: Vec::new(),
+            pointer_focus: None,
+            keyboard_focus: None,
+            pending_pointer_events: Vec::new(),
+            pending_keyboard_events: Vec::new(),
         };
 
         // fetch globals
@@ -56,6 +66,8 @@ impl Application {
 
         let mut world = World::new();
         MessageRegistry::register_message::<WindowCloseRequested>(&mut world);
+        MessageRegistry::register_message::<PointerEvent>(&mut world);
+        MessageRegistry::register_message::<KeyboardEvent>(&mut world);
         world.init_resource::<WindowManager>();
         world.insert_resource(globals);
         world.insert_resource(GpuContext::new());
@@ -90,6 +102,11 @@ impl Application {
             window_id,
             display_ptr,
         );
+
+        // Register the surface → window_id mapping for input event routing
+        self.app_state
+            .register_surface(&window.surface, window_id);
+
         self.add_window(window)
     }
 
@@ -125,11 +142,31 @@ impl Application {
                 });
             }
 
-            // close events
+            // close events — also unregister surfaces from the input map
             if !self.app_state.pending_closes.is_empty() {
+                let closes: Vec<usize> = self.app_state.pending_closes.drain(..).collect();
+                for &id in &closes {
+                    self.app_state.unregister_surface(id);
+                }
                 let mut ecs_messages = self.world.resource_mut::<Messages<WindowCloseRequested>>();
-                for id in self.app_state.pending_closes.drain(..) {
+                for id in closes {
                     ecs_messages.write(WindowCloseRequested(id));
+                }
+            }
+
+            // pointer events → ECS
+            if !self.app_state.pending_pointer_events.is_empty() {
+                let mut ecs_messages = self.world.resource_mut::<Messages<PointerEvent>>();
+                for event in self.app_state.pending_pointer_events.drain(..) {
+                    ecs_messages.write(event);
+                }
+            }
+
+            // keyboard events → ECS
+            if !self.app_state.pending_keyboard_events.is_empty() {
+                let mut ecs_messages = self.world.resource_mut::<Messages<KeyboardEvent>>();
+                for event in self.app_state.pending_keyboard_events.drain(..) {
+                    ecs_messages.write(event);
                 }
             }
 

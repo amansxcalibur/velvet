@@ -1,6 +1,11 @@
+use crate::wayland::resources::{KeyboardEvent, KeyboardEventKind, PointerEvent, PointerEventKind};
+use log::debug;
 use wayland_client::{
-    Connection, Dispatch, QueueHandle,
-    protocol::{wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface},
+    Connection, Dispatch, QueueHandle, WEnum,
+    protocol::{
+        wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_registry, wl_seat, wl_shm,
+        wl_shm_pool, wl_surface,
+    },
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
@@ -11,11 +16,58 @@ pub struct AppStateInternal {
     pub compositor: Option<wl_compositor::WlCompositor>,
     pub shm: Option<wl_shm::WlShm>,
     pub wm_base: Option<xdg_wm_base::XdgWmBase>,
+    pub seat: Option<wl_seat::WlSeat>,
     pub running: bool,
     pub pending_sizes: std::collections::HashMap<usize, (i32, i32)>, // latest size seen per window
     pub pending_configures: Vec<(usize, i32, i32)>,                  // (window_id, width, height)
     pub pending_closes: Vec<usize>,
+
+    // Input devices (obtained from wl_seat capabilities)
+    pub pointer: Option<wl_pointer::WlPointer>,
+    pub keyboard: Option<wl_keyboard::WlKeyboard>,
+
+    // Surface → window_id lookup (registered when VelvetWindow is created)
+    pub surface_window_map: Vec<(wl_surface::WlSurface, usize)>,
+
+    // Current focus tracking
+    pub pointer_focus: Option<usize>,
+    pub keyboard_focus: Option<usize>,
+
+    // Staged input events — drained into ECS each frame
+    pub pending_pointer_events: Vec<PointerEvent>,
+    pub pending_keyboard_events: Vec<KeyboardEvent>,
 }
+
+impl AppStateInternal {
+    /// Register a wl_surface → window_id mapping for input event routing.
+    pub fn register_surface(&mut self, surface: &wl_surface::WlSurface, window_id: usize) {
+        self.surface_window_map.push((surface.clone(), window_id));
+    }
+
+    /// Remove a window's surface mapping (called on window close).
+    pub fn unregister_surface(&mut self, window_id: usize) {
+        self.surface_window_map.retain(|(_, id)| *id != window_id);
+        // Clear focus if the destroyed window had it
+        if self.pointer_focus == Some(window_id) {
+            self.pointer_focus = None;
+        }
+        if self.keyboard_focus == Some(window_id) {
+            self.keyboard_focus = None;
+        }
+    }
+
+    /// Look up which window_id owns a given wl_surface.
+    fn lookup_window(&self, surface: &wl_surface::WlSurface) -> Option<usize> {
+        self.surface_window_map
+            .iter()
+            .find(|(s, _)| s == surface)
+            .map(|(_, id)| *id)
+    }
+}
+
+// ===========================================================================
+// Existing Wayland global dispatch impls (unchanged logic)
+// ===========================================================================
 
 impl Dispatch<wl_registry::WlRegistry, ()> for AppStateInternal {
     fn event(
@@ -34,6 +86,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for AppStateInternal {
                 "wl_compositor" => state.compositor = Some(registry.bind(name, 4, qh, ())),
                 "wl_shm" => state.shm = Some(registry.bind(name, 1, qh, ())),
                 "xdg_wm_base" => state.wm_base = Some(registry.bind(name, 1, qh, ())),
+                "wl_seat" => state.seat = Some(registry.bind(name, 5, qh, ())),
                 _ => {}
             }
         }
@@ -149,6 +202,194 @@ impl Dispatch<xdg_toplevel::XdgToplevel, usize> for AppStateInternal {
             }
             // handle close request from compositor
             xdg_toplevel::Event::Close => state.pending_closes.push(*window_id),
+            _ => {}
+        }
+    }
+}
+
+// ===========================================================================
+// wl_seat — capability negotiation
+// ===========================================================================
+
+impl Dispatch<wl_seat::WlSeat, ()> for AppStateInternal {
+    fn event(
+        state: &mut Self,
+        seat: &wl_seat::WlSeat,
+        event: wl_seat::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_seat::Event::Capabilities { capabilities } = event {
+            if let WEnum::Value(caps) = capabilities {
+                if caps.contains(wl_seat::Capability::Pointer) && state.pointer.is_none() {
+                    state.pointer = Some(seat.get_pointer(qh, ()));
+                    debug!("wl_seat: acquired wl_pointer");
+                }
+                if caps.contains(wl_seat::Capability::Keyboard) && state.keyboard.is_none() {
+                    state.keyboard = Some(seat.get_keyboard(qh, ()));
+                    debug!("wl_seat: acquired wl_keyboard");
+                }
+            }
+        }
+    }
+}
+
+// ===========================================================================
+// wl_pointer — mouse / trackpad events
+// ===========================================================================
+
+impl Dispatch<wl_pointer::WlPointer, ()> for AppStateInternal {
+    fn event(
+        state: &mut Self,
+        _pointer: &wl_pointer::WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_pointer::Event::Enter {
+                surface,
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                if let Some(window_id) = state.lookup_window(&surface) {
+                    state.pointer_focus = Some(window_id);
+                    state.pending_pointer_events.push(PointerEvent {
+                        window_id,
+                        kind: PointerEventKind::Enter {
+                            x: surface_x,
+                            y: surface_y,
+                        },
+                    });
+                }
+            }
+            wl_pointer::Event::Leave { surface, .. } => {
+                if let Some(window_id) = state.lookup_window(&surface) {
+                    state.pointer_focus = None;
+                    state.pending_pointer_events.push(PointerEvent {
+                        window_id,
+                        kind: PointerEventKind::Leave,
+                    });
+                }
+            }
+            wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                if let Some(window_id) = state.pointer_focus {
+                    state.pending_pointer_events.push(PointerEvent {
+                        window_id,
+                        kind: PointerEventKind::Motion {
+                            x: surface_x,
+                            y: surface_y,
+                        },
+                    });
+                }
+            }
+            wl_pointer::Event::Button {
+                button,
+                state: btn_state,
+                ..
+            } => {
+                if let Some(window_id) = state.pointer_focus {
+                    let pressed =
+                        matches!(btn_state, WEnum::Value(wl_pointer::ButtonState::Pressed));
+                    state.pending_pointer_events.push(PointerEvent {
+                        window_id,
+                        kind: PointerEventKind::Button { button, pressed },
+                    });
+                }
+            }
+            wl_pointer::Event::Axis { axis, value, .. } => {
+                if let Some(window_id) = state.pointer_focus {
+                    if let WEnum::Value(axis_val) = axis {
+                        state.pending_pointer_events.push(PointerEvent {
+                            window_id,
+                            kind: PointerEventKind::Axis {
+                                axis: axis_val as u32,
+                                value,
+                            },
+                        });
+                    }
+                }
+            }
+            _ => {} // AxisSource, AxisStop, AxisDiscrete, Frame, etc.
+        }
+    }
+}
+
+// ===========================================================================
+// wl_keyboard — key press / release / modifiers
+// ===========================================================================
+
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for AppStateInternal {
+    fn event(
+        state: &mut Self,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_keyboard::Event::Enter { surface, .. } => {
+                if let Some(window_id) = state.lookup_window(&surface) {
+                    state.keyboard_focus = Some(window_id);
+                    state.pending_keyboard_events.push(KeyboardEvent {
+                        window_id,
+                        kind: KeyboardEventKind::Enter,
+                    });
+                }
+            }
+            wl_keyboard::Event::Leave { surface, .. } => {
+                if let Some(window_id) = state.lookup_window(&surface) {
+                    state.keyboard_focus = None;
+                    state.pending_keyboard_events.push(KeyboardEvent {
+                        window_id,
+                        kind: KeyboardEventKind::Leave,
+                    });
+                }
+            }
+            wl_keyboard::Event::Key {
+                key,
+                state: key_state,
+                ..
+            } => {
+                if let Some(window_id) = state.keyboard_focus {
+                    let pressed =
+                        matches!(key_state, WEnum::Value(wl_keyboard::KeyState::Pressed));
+                    state.pending_keyboard_events.push(KeyboardEvent {
+                        window_id,
+                        kind: KeyboardEventKind::Key { key, pressed },
+                    });
+                }
+            }
+            wl_keyboard::Event::Modifiers {
+                mods_depressed,
+                mods_latched,
+                mods_locked,
+                group,
+                ..
+            } => {
+                if let Some(window_id) = state.keyboard_focus {
+                    state.pending_keyboard_events.push(KeyboardEvent {
+                        window_id,
+                        kind: KeyboardEventKind::Modifiers {
+                            depressed: mods_depressed,
+                            latched: mods_latched,
+                            locked: mods_locked,
+                            group,
+                        },
+                    });
+                }
+            }
+            wl_keyboard::Event::Keymap { .. } => {
+                // TODO: xkbcommon integration for proper key symbol resolution
+            }
             _ => {}
         }
     }
