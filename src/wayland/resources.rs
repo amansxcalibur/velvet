@@ -12,10 +12,6 @@ pub struct WaylandGlobals {
     pub wm_base: xdg_wm_base::XdgWmBase,
 }
 
-// ---------------------------------------------------------------------------
-// Input event types — staged on AppStateInternal, then drained into ECS
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone)]
 pub enum PointerEventKind {
     Enter { x: f64, y: f64 },
