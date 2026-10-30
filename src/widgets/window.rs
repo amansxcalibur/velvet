@@ -1,5 +1,4 @@
-use crate::render::quad::QuadInstance;
-use crate::render::{GpuContext, GpuSurface};
+use crate::render::GpuSurface;
 use crate::wayland::AppStateInternal;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
@@ -7,8 +6,8 @@ use raw_window_handle::{
 };
 use wayland_client::Proxy;
 use wayland_client::{
-    QueueHandle,
     protocol::{wl_compositor, wl_surface},
+    QueueHandle,
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
@@ -52,7 +51,6 @@ pub struct VelvetWindow {
     pub toplevel: xdg_toplevel::XdgToplevel,
     pub configured: bool,
     display_ptr: DisplayPtr,
-    pub quads: Vec<QuadInstance>,
 }
 
 impl VelvetWindow {
@@ -78,23 +76,6 @@ impl VelvetWindow {
             configured: false,
             gpu: None,
             display_ptr: DisplayPtr(display_ptr),
-            quads: Vec::new(),
-        }
-    }
-
-    pub fn render(&self, ctx: &GpuContext) {
-        if let Some(gpu) = &self.gpu {
-            gpu.render(
-                ctx,
-                &ctx.quad_pipeline,
-                &self.quads,
-                wgpu::Color {
-                    r: 0.267,
-                    g: 0.529,
-                    b: 0.667,
-                    a: 1.0,
-                },
-            );
         }
     }
 }

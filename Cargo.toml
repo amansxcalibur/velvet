@@ -10,6 +10,7 @@ log = "0.4.34"
 pollster = "1.0.1"
 raw-window-handle = "0.6.2"
 smithay-client-toolkit = "=0.21.1"
+taffy = "0.14.0"
 wayland-client = "0.31.15"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = "0.32.13"

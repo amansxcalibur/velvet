@@ -1,6 +1,7 @@
 use crate::render::{GpuContext, GpuSurface};
 use crate::wayland::WindowCloseRequested;
 use crate::widgets::window::VelvetWindow;
+use crate::widgets::QuadBuffers;
 use bevy_ecs::prelude::*;
 use log::debug;
 use std::collections::HashMap;
@@ -52,15 +53,28 @@ impl WindowManager {
         }
     }
 
-    pub fn render_all_gpu(&self, ctx: &GpuContext) {
-        for window in self.windows.values() {
-            window.render(ctx);
+    pub fn render_all_gpu(&self, ctx: &GpuContext, buffers: &QuadBuffers) {
+        for id in self.windows.keys() {
+            self.render_window(*id, ctx, buffers);
         }
     }
 
-    pub fn render_window(&self, id: usize, ctx: &GpuContext) {
-        if let Some(window) = self.windows.get(&id) {
-            window.render(ctx);
+    pub fn render_window(&self, id: usize, ctx: &GpuContext, buffers: &QuadBuffers) {
+        if let Some(window) = self.windows.get(&id)
+            && let Some(gpu) = &window.gpu
+            && let Some(quads) = buffers.windows.get(&id)
+        {
+            gpu.render(
+                ctx,
+                &ctx.quad_pipeline,
+                quads,
+                wgpu::Color {
+                    r: 0.267,
+                    g: 0.529,
+                    b: 0.667,
+                    a: 1.0,
+                },
+            );
         }
     }
 }
