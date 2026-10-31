@@ -4,6 +4,7 @@
 //! around it via the standard dirtying pipeline: `set_widget_size` mutates the
 //! `WidgetStyle` component → `sync_styles_to_taffy` dirties the mirror →
 //! `layout_system` recomputes → `flatten_system` re-emits quads.
+//! The example also prints the render-loop frame rate once per second.
 //!
 //! The timer is a plain [`TimeContext`](velvet::TimeContext) source, registered
 //! GLib-style via the world (no `Application` method) — exactly as a system or
@@ -56,6 +57,27 @@ fn main() {
             big.set(true);
         }
         true // keep repeating
+    });
+
+    // A tick callback runs once per render-loop iteration. Count those frames
+    // over the measured elapsed time so terminal output stays useful even when
+    // individual frame times vary.
+    let frames = Cell::new(0u64);
+    let elapsed = Cell::new(Duration::ZERO);
+    TimeContext::add_tick_callback(app.world(), move |_, delta| {
+        frames.set(frames.get() + 1);
+        let window = elapsed.get() + delta;
+
+        if window >= Duration::from_secs(1) {
+            let fps = frames.get() as f64 / window.as_secs_f64();
+            println!("pulse frame rate: {fps:.1} FPS");
+            frames.set(0);
+            elapsed.set(Duration::ZERO);
+        } else {
+            elapsed.set(window);
+        }
+
+        true // keep measuring
     });
 
     app.run();
